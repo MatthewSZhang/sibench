@@ -45,7 +45,7 @@ def evaluate(
 @click.option("--delay-u", default=20, type=int, help="Upper bound for max_delay")
 @click.option("--poly-l", default=1, type=int, help="Lower bound for poly_degree")
 @click.option("--poly-u", default=3, type=int, help="Upper bound for poly_degree")
-@click.option("--n-trials", default=50, type=int, help="Number of optimization trials")
+@click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
 def hpopt(
     data: str,
     n_folds: int,

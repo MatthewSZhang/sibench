@@ -22,7 +22,7 @@ from rich.progress import track
 @click.option("--t-u", default=1.0, type=float, help="STLSQ: Upper bound for threshold")
 @click.option("--a-l", default=1e-6, type=float, help="STLSQ: Lower bound for alpha")
 @click.option("--a-u", default=1.0, type=float, help="STLSQ: Upper bound for alpha")
-@click.option("--n-trials", default=50, type=int, help="Number of optimization trials")
+@click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
 def hpopt(
     data: str,
     d_l: int,
