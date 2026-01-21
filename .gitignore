@@ -1,0 +1,12 @@
+# IDE
+.vscode
+.DS_Store
+
+# Python Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+
+# This project
+*.db
+*.db-journal
+*.ipynb
