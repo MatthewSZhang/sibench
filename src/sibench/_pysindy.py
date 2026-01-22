@@ -22,6 +22,8 @@ from rich.progress import track
 @click.option("--t-u", default=1.0, type=float, help="STLSQ: Upper bound for threshold")
 @click.option("--a-l", default=1e-6, type=float, help="STLSQ: Lower bound for alpha")
 @click.option("--a-u", default=1.0, type=float, help="STLSQ: Upper bound for alpha")
+@click.option("--rtol", default=1e-3, type=float, help="Integrator relative tolerance")
+@click.option("--atol", default=1e-3, type=float, help="Integrator absolute tolerance")
 @click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
 def hpopt(
     data: str,
@@ -35,8 +37,11 @@ def hpopt(
     t_u: float,
     a_l: float,
     a_u: float,
+    rtol: float,
+    atol: float,
     n_trials: int,
 ):
+    integrator_kws = {"method": "LSODA", "rtol": rtol, "atol": atol}
     X_full, y_full, dt_full, n_init = _get_train(data)
 
     study = optuna.create_study(
@@ -63,6 +68,7 @@ def hpopt(
         t_u,
         a_l,
         a_u,
+        integrator_kws,
     ), n_trials=n_trials)
 
     print("Best params:", study.best_params)
@@ -75,16 +81,17 @@ def _objective(
     y_full,
     dt_full,
     n_init,
-    d_l=1,
-    d_u=3,
-    f_l=1,
-    f_u=100,
-    o_l=1,
-    o_u=3,
-    t_l=1e-6,
-    t_u=1.0,
-    a_l=1e-6,
-    a_u=1.0,
+    d_l,
+    d_u,
+    f_l,
+    f_u,
+    o_l,
+    o_u,
+    t_l,
+    t_u,
+    a_l,
+    a_u,
+    integrator_kws,
 
 ):
     degree = trial.suggest_int('degree', d_l, d_u)
@@ -106,6 +113,7 @@ def _objective(
             order,
             threshold,
             alpha,
+            integrator_kws=integrator_kws,
             print_results=True,
         )
         return np.mean(r2)
@@ -120,6 +128,8 @@ def _objective(
 @click.option("--order", type=int, required=True, help="Order of finite difference")
 @click.option("-t", "--threshold", type=float, required=True, help="SINDy threshold")
 @click.option("-a", "--alpha", type=float, required=True, help="SINDy alpha")
+@click.option("--rtol", default=1e-3, type=float, help="Integrator relative tolerance")
+@click.option("--atol", default=1e-3, type=float, help="Integrator absolute tolerance")
 def evaluate(
     data: str,
     degree,
@@ -127,8 +137,12 @@ def evaluate(
     order,
     threshold,
     alpha,
+    rtol,
+    atol,
 ):
     X_full, y_full, dt_full, n_init = _get_train(data)
+
+    integrator_kws = {'method': 'LSODA', 'rtol': rtol, 'atol': atol}
 
     scores = _cross_validation(
         X_full,
@@ -140,6 +154,7 @@ def evaluate(
         order,
         threshold,
         alpha,
+        integrator_kws=integrator_kws,
         print_results=True,
     )
     avg_score = np.mean(scores)
@@ -225,19 +240,24 @@ def _make_sindyc(X_full, y_full, dt_full, n_degrees, n_freqs, n_orders, threshol
     model.fit(y_full, t=dt_full, u=X_full)
     return model
 
-def _predict(model: SINDy, X_full, y_full, dt_full, n_steps):
+def _predict(model: SINDy, X_full, y_full, dt_full, n_steps, integrator_kws):
     def u_func(t, u, dt):
         return u[np.round(t / dt).astype(int)]
     
     y_hat_full = []
     for i, dt in enumerate(dt_full):
         t_steps = np.arange(0, dt*n_steps, dt)
-        y_hat = model.simulate(y_full[i][0], t=t_steps, u=lambda t: u_func(t, X_full[i], dt))
+        y_hat = model.simulate(
+            y_full[i][0], 
+            t=t_steps, 
+            u=lambda t: u_func(t, X_full[i], dt),
+            integrator_kws=integrator_kws
+        )
         y_hat_full.append(y_hat)
     return y_hat_full
 
 def _cross_validation(
-    X_full, y_full, dt_full, n_init, n_degrees, n_freqs, n_orders, threshold, alpha, print_results=True
+    X_full, y_full, dt_full, n_init, n_degrees, n_freqs, n_orders, threshold, alpha, integrator_kws, print_results=True
 ):
     n_steps = 100 # Too slow to simulate full length of validation data
     n_sessions = len(X_full)
@@ -273,6 +293,7 @@ def _cross_validation(
             y_val,
             dt_val,
             n_steps=n_steps,
+            integrator_kws=integrator_kws,
         )
         
         scores.append(_compute_metrics(y_val, y_val_pred, n_init, print_results=print_results))
