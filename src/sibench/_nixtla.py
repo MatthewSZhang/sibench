@@ -56,8 +56,8 @@ def evaluate(
 @click.option("--season_max", type=int, default=100, help="Max Seasonality")
 @click.option("--max_p", type=int, default=5, help="Max AR")
 @click.option("--max_q", type=int, default=5, help="Max MA")
-@click.option("--max_P", type=int, default=2, help="Max Seasonal AR")
-@click.option("--max_Q", type=int, default=2, help="Max Seasonal MA")
+@click.option("--max_P", "max_P", type=int, default=1, help="Max Seasonal AR")
+@click.option("--max_Q", "max_Q", type=int, default=1, help="Max Seasonal MA")
 @click.option("--n_trials", type=int, default=20, help="Number of trials")
 def hpopt(
     data: str,
