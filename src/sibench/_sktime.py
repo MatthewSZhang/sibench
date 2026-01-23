@@ -1,0 +1,173 @@
+from sktime.forecasting.auto_reg import AutoREG  
+from sktime.forecasting.base import ForecastingHorizon
+from sklearn.model_selection import TimeSeriesSplit
+from rich.progress import track
+from nonlinear_benchmarks.error_metrics import RMSE, NRMSE, R_squared, MAE, fit_index
+import numpy as np
+import nonlinear_benchmarks
+import pandas as pd
+import optuna
+import click
+
+
+@click.command()
+@click.option("--data", type=str, required=True, help="Name of the dataset")
+@click.option("--n-folds", default=5, type=int, help="Number of folds for cross validation")
+@click.option("--lags", default=2, type=int, help="Number of lags")
+@click.option("--trend", default='n', type=click.Choice(['n', 'c', 't', 'ct']), help="Trend parameter")
+def evaluate(
+    data: str,
+    n_folds: int,
+    lags: int,
+    trend: str,
+):
+    df_full, n_init = _get_train(data)
+
+    r2 = _cross_validation(
+        df_full,
+        n_folds,
+        n_init,
+        lags,
+        trend,
+        print_results=True
+    )
+    print(f"R2: {r2:.4f}")
+    return r2
+
+@click.command()
+@click.option("--data", type=str, required=True, help="Name of the dataset")
+@click.option("--n-folds", default=5, type=int, help="Number of folds for cross validation")
+@click.option("--max-lags", default=100, type=int, help="Maximum lags for AutoREG")
+@click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
+def hpopt(
+    data: str,
+    n_folds: int,
+    max_lags: int,
+    n_trials: int,
+):
+    df_full, n_init = _get_train(data)
+
+    study = optuna.create_study(
+        direction="maximize",
+        storage=f"sqlite:///results/sktime_{data}.db",
+        study_name="sktime_auto_reg",
+        load_if_exists=True
+    )
+    
+    print("Starting optimization...")
+    study.optimize(lambda trial: _objective(
+        trial,
+        df_full,
+        n_init,
+        n_folds,
+        max_lags,
+    ), n_trials=n_trials)
+
+    print("Best hyperparameters:")
+    print(study.best_params)
+    print(f"Best R2: {study.best_value:.4f}")
+
+def _objective(
+    trial,
+    df_full,
+    n_init,
+    n_folds,
+    max_lags,
+):
+    lags = trial.suggest_int('lags', 1, max_lags)
+    trend = trial.suggest_categorical('trend', ['n', 'c', 't', 'ct'])
+
+
+    r2 = _cross_validation(
+        df_full,
+        n_folds,
+        n_init,
+        lags,
+        trend,
+        print_results=False
+    )
+    return r2
+
+def _get_train(data: str):
+    match data:
+        case "EMPS":
+            train_val, test = nonlinear_benchmarks.EMPS()
+        case "CED":
+            train_val, test = nonlinear_benchmarks.CED()
+        case "WienerHammerBenchMark":
+            train_val, test = nonlinear_benchmarks.WienerHammerBenchMark()
+        case "Silverbox":
+            train_val, test = nonlinear_benchmarks.Silverbox()
+        case "F16":
+            train_val, test = nonlinear_benchmarks.F16()
+        case "ParWH":
+            train_val, test = nonlinear_benchmarks.ParWH()
+        case "Cascaded_Tanks":
+            train_val, test = nonlinear_benchmarks.Cascaded_Tanks()
+        case _:
+            raise ValueError(f"Unknown dataset: {data}")
+
+    df_full = _prepare_data(train_val)
+
+    if isinstance(test, tuple):
+        n_init = test[0].state_initialization_window_length
+    else:
+        n_init = test.state_initialization_window_length
+    return df_full, n_init
+
+def _prepare_data(train_val):
+    if not isinstance(train_val, tuple):
+        train_val = (train_val,)
+    df_full = [pd.DataFrame({"u": session.u, "y": session.y}) for session in train_val]
+
+    return df_full
+
+
+def _cross_validation(df_full, n_folds, n_init, lags, trend, print_results=True):
+    tscv = TimeSeriesSplit(n_splits=n_folds)
+    y_hat_full = []
+    y_true_full = []
+        
+    for i, df_data in enumerate(df_full):
+        for train_index, val_index in track(
+            tscv.split(df_data),
+            total=n_folds,
+            description=f"Processing time series {i+1}/{n_folds}"
+        ):
+            df_train = df_data.iloc[train_index]
+            df_val = df_data.iloc[val_index]
+
+            mdl = AutoREG(lags=lags, trend=trend)
+
+            mdl.fit(y=df_train["y"], X=df_train[["u"]])
+            fh = ForecastingHorizon(df_val.index, is_relative=False)
+            y_hat = mdl.predict(X=df_val[["u"]], fh=fh).values
+            y_true = df_val["y"].values
+            y_hat_full.append(y_hat)
+            y_true_full.append(y_true)
+    return _compute_metrics(y_true_full, y_hat_full, n_init, print_results=print_results)
+
+
+def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
+    rmse = []
+    nrmse = []
+    r2 = []
+    mae = []
+    fidx = []
+    n_sessions = len(y_pred_full)
+    n_steps = y_pred_full[0].shape[0]
+    for i in range(n_sessions):
+        y_true = y_true_full[i][:n_steps]
+        y_pred = y_pred_full[i]
+        rmse.append(RMSE(y_true[n_init:], y_pred[n_init:]))
+        nrmse.append(NRMSE(y_true[n_init:], y_pred[n_init:]))
+        r2.append(R_squared(y_true[n_init:], y_pred[n_init:]))
+        mae.append(MAE(y_true[n_init:], y_pred[n_init:]))
+        fidx.append(fit_index(y_true[n_init:], y_pred[n_init:]))
+    if print_results:
+        print(f"RMSE: {np.mean(rmse)}")
+        print(f"NRMSE: {np.mean(nrmse)}")
+        print(f"R-squared: {np.mean(r2)}")
+        print(f'MAE: {np.mean(mae)}')
+        print(f"fit index: {np.mean(fidx)}")
+    return np.mean(r2)

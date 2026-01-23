@@ -46,7 +46,7 @@ def hpopt(
 
     study = optuna.create_study(
         direction="maximize",
-        storage=f"sqlite:///pysindy_{data}.db",
+        storage=f"sqlite:///results/pysindy_{data}.db",
         study_name="pysindy_stlsq",
         load_if_exists=True
     )

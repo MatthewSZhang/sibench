@@ -61,7 +61,7 @@ def hpopt(
 
     study = optuna.create_study(
         direction="maximize",
-        storage=f"sqlite:///fastcan_{data}.db",
+        storage=f"sqlite:///results/fastcan_{data}.db",
         study_name="fastcan_narx",
         load_if_exists=True
     )
