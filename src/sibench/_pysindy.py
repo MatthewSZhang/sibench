@@ -204,8 +204,8 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
     mae = []
     fidx = []
     n_sessions = len(y_pred_full)
-    n_steps = y_pred_full[0].shape[0]
     for i in range(n_sessions):
+        n_steps = y_pred_full[i].shape[0]
         y_true = y_true_full[i][:n_steps]
         y_pred = y_pred_full[i]
         rmse.append(RMSE(y_true[n_init:], y_pred[n_init:]))

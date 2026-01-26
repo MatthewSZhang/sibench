@@ -1,7 +1,7 @@
 from sktime.forecasting.auto_reg import AutoREG  
 from sktime.forecasting.base import ForecastingHorizon
 from sklearn.model_selection import TimeSeriesSplit
-from rich.progress import track
+from rich.progress import Progress, TimeRemainingColumn
 from nonlinear_benchmarks.error_metrics import RMSE, NRMSE, R_squared, MAE, fit_index
 import numpy as np
 import nonlinear_benchmarks
@@ -37,7 +37,7 @@ def evaluate(
 @click.command()
 @click.option("--data", type=str, required=True, help="Name of the dataset")
 @click.option("--n-folds", default=5, type=int, help="Number of folds for cross validation")
-@click.option("--max-lags", default=100, type=int, help="Maximum lags for AutoREG")
+@click.option("--max-lags", default=30, type=int, help="Maximum lags for AutoREG")
 @click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
 def hpopt(
     data: str,
@@ -128,23 +128,34 @@ def _cross_validation(df_full, n_folds, n_init, lags, trend, print_results=True)
     y_hat_full = []
     y_true_full = []
         
-    for i, df_data in enumerate(df_full):
-        for train_index, val_index in track(
-            tscv.split(df_data),
-            total=n_folds,
-            description=f"Processing time series {i+1}/{n_folds}"
-        ):
-            df_train = df_data.iloc[train_index]
-            df_val = df_data.iloc[val_index]
+    columns = [*Progress.get_default_columns()]
+    columns[-1] = TimeRemainingColumn(elapsed_when_finished=True)
+    with Progress(*columns, auto_refresh=True) as progress:
+        series_task = progress.add_task("[green]Processing series...", total=len(df_full))
 
-            mdl = AutoREG(lags=lags, trend=trend)
+        for i, df_data in enumerate(df_full):
+            fold_task = progress.add_task(f"[cyan]Series {i+1}/{len(df_full)}", total=n_folds)
+            for train_index, val_index in tscv.split(df_data):
+                df_train = df_data.iloc[train_index]
+                df_val = df_data.iloc[val_index]
 
-            mdl.fit(y=df_train["y"], X=df_train[["u"]])
-            fh = ForecastingHorizon(df_val.index, is_relative=False)
-            y_hat = mdl.predict(X=df_val[["u"]], fh=fh).values
-            y_true = df_val["y"].values
-            y_hat_full.append(y_hat)
-            y_true_full.append(y_true)
+                mdl = AutoREG(lags=lags, trend=trend)
+
+                mdl.fit(y=df_train["y"], X=df_train[["u"]])
+                fh = ForecastingHorizon(df_val.index, is_relative=False)
+                y_hat = mdl.predict(X=df_val[["u"]], fh=fh).values
+
+                divergence_indices = np.where((y_hat > 1e20) | np.isnan(y_hat) | np.isinf(y_hat))[0]
+                if divergence_indices.size > 0:
+                    y_hat[divergence_indices[0]:] = 1e20
+
+                y_true = df_val["y"].values
+                y_hat_full.append(y_hat)
+                y_true_full.append(y_true)
+                progress.advance(fold_task)
+            
+            progress.remove_task(fold_task)
+            progress.advance(series_task)
     return _compute_metrics(y_true_full, y_hat_full, n_init, print_results=print_results)
 
 
@@ -155,8 +166,8 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
     mae = []
     fidx = []
     n_sessions = len(y_pred_full)
-    n_steps = y_pred_full[0].shape[0]
     for i in range(n_sessions):
+        n_steps = y_pred_full[i].shape[0]
         y_true = y_true_full[i][:n_steps]
         y_pred = y_pred_full[i]
         rmse.append(RMSE(y_true[n_init:], y_pred[n_init:]))

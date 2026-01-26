@@ -58,7 +58,7 @@ def evaluate(
 @click.option("--max_q", type=int, default=5, help="Max MA")
 @click.option("--max_P", "max_P", type=int, default=1, help="Max Seasonal AR")
 @click.option("--max_Q", "max_Q", type=int, default=1, help="Max Seasonal MA")
-@click.option("--n_trials", type=int, default=20, help="Number of trials")
+@click.option("--n_trials", type=int, default=None, help="Number of trials")
 def hpopt(
     data: str,
     n_folds: int,
@@ -160,7 +160,7 @@ def _get_train(data: str):
         train_val = (train_val,)
     df_full = []
     for i in range(len(train_val)):
-        freq_str = f"{int(train_val[i].sampling_time * 1000000)}us"
+        freq_str = f"{int(float(train_val[i].sampling_time) * 1000000)}us"
         ds = pd.date_range(start='1970-01-01', periods=len(train_val[i].y), freq=freq_str)
         df_part = pd.DataFrame({
             "unique_id": f"{data}_{i}",  
@@ -220,8 +220,8 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
     mae = []
     fidx = []
     n_sessions = len(y_pred_full)
-    n_steps = y_pred_full[0].shape[0]
     for i in range(n_sessions):
+        n_steps = y_pred_full[i].shape[0]
         y_true = y_true_full[i][:n_steps]
         y_pred = y_pred_full[i]
         rmse.append(RMSE(y_true[n_init:], y_pred[n_init:]))
