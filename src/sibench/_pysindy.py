@@ -8,6 +8,7 @@ from pysindy import SINDy
 import optuna
 import click
 from rich.progress import track
+import sqlite3
 
 
 @click.command()
@@ -44,9 +45,13 @@ def hpopt(
     integrator_kws = {"method": "LSODA", "rtol": rtol, "atol": atol}
     X_full, y_full, dt_full, n_init = _get_data(data)
 
+    db_path = f"results/pysindy_{data}.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+
     study = optuna.create_study(
         direction="maximize",
-        storage=f"sqlite:///results/pysindy_{data}.db",
+        storage=f"sqlite:///{db_path}",
         study_name="pysindy_stlsq",
         load_if_exists=True
     )

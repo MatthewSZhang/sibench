@@ -9,6 +9,7 @@ from statsforecast.models import AutoARIMA
 import optuna
 import click
 from rich.progress import Progress, TimeRemainingColumn
+import sqlite3
 
 
 @click.command()
@@ -71,9 +72,14 @@ def hpopt(
 ):
     df_full, n_init, freq_str = _get_data(data)
 
+    # Enable WAL mode for SQLite to allow safe reading/copying while writing
+    db_path = f"results/nixtla_{data}.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+
     study = optuna.create_study(
         direction="maximize",
-        storage=f"sqlite:///results/nixtla_{data}.db",
+        storage=f"sqlite:///{db_path}",
         study_name="nixtla_autoarima",
         load_if_exists=True
     )

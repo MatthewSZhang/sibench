@@ -5,6 +5,7 @@ import numpy as np
 from fastcan.narx import NARX, make_narx
 import optuna
 import click
+import sqlite3
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Name of the dataset")
@@ -59,9 +60,13 @@ def hpopt(
 ):
     X_full, y_full, session_sizes_full, n_init = _get_data(data)
 
+    db_path = f"results/fastcan_{data}.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+
     study = optuna.create_study(
         direction="maximize",
-        storage=f"sqlite:///results/fastcan_{data}.db",
+        storage=f"sqlite:///{db_path}",
         study_name="fastcan_narx",
         load_if_exists=True
     )

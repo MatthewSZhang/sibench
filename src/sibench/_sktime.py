@@ -8,6 +8,7 @@ import nonlinear_benchmarks
 import pandas as pd
 import optuna
 import click
+import sqlite3
 
 
 @click.command()
@@ -47,9 +48,13 @@ def hpopt(
 ):
     df_full, n_init = _get_data(data)
 
+    db_path = f"results/sktime_{data}.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+
     study = optuna.create_study(
         direction="maximize",
-        storage=f"sqlite:///results/sktime_{data}.db",
+        storage=f"sqlite:///{db_path}",
         study_name="sktime_auto_reg",
         load_if_exists=True
     )
