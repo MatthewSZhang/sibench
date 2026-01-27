@@ -273,7 +273,7 @@ def test(data, season_length, max_p, max_q, max_P, max_Q, return_metric="RMSE"):
 
 
 def _cross_validation(df_full, n_folds, n_init, sf, print_results=True):
-    n_steps = 300 # Too slow to do full length CV with Nixtla
+    n_steps = 100 # Too slow to do full length CV with Nixtla
     tscv = TimeSeriesSplit(n_splits=n_folds)
     y_hat_full = []
     y_true_full = []

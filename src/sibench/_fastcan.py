@@ -43,7 +43,7 @@ def evaluate(
 @click.option("--term-l", default=3, type=int, help="Lower bound for n_terms")
 @click.option("--term-u", default=20, type=int, help="Upper bound for n_terms")
 @click.option("--delay-l", default=3, type=int, help="Lower bound for max_delay")
-@click.option("--delay-u", default=20, type=int, help="Upper bound for max_delay")
+@click.option("--delay-u", default=10, type=int, help="Upper bound for max_delay")
 @click.option("--poly-l", default=1, type=int, help="Lower bound for poly_degree")
 @click.option("--poly-u", default=3, type=int, help="Upper bound for poly_degree")
 @click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
@@ -70,7 +70,7 @@ def hpopt(
         study_name="fastcan_narx",
         load_if_exists=True
     )
-    
+
     print("Starting optimization...")
     study.optimize(lambda trial: _objective(
         trial,
@@ -188,7 +188,7 @@ def test(data, n_terms, n_lags, n_polys, print_results=True, return_metric: str 
         max_delay = n_lags,
         poly_degree = n_polys,
         session_sizes = session_sizes_train,
-        max_candidates = 10000,
+        max_candidates = 1000,
     )
     mdl.fit(
         X=X_train,
@@ -197,7 +197,7 @@ def test(data, n_terms, n_lags, n_polys, print_results=True, return_metric: str 
         session_sizes = session_sizes_train,
         verbose=2,
     )
-    
+
     y_val_pred = _predict(
         mdl,
         X_test,
@@ -205,7 +205,7 @@ def test(data, n_terms, n_lags, n_polys, print_results=True, return_metric: str 
         n_init,
         session_sizes_test,
     )
-        
+
     return _compute_metrics(
         y_test, y_val_pred, n_init, session_sizes_test, print_results=print_results, return_metric=return_metric
     )
@@ -216,10 +216,10 @@ def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_ter
     for train_index, val_index in tscv.split(X_full):
         X_train, X_val = X_full[train_index], X_full[val_index]
         y_train, y_val = y_full[train_index], y_full[val_index]
-        
+
         session_sizes_train = _split_sessions(train_index, session_sizes_full)
         session_sizes_val = _split_sessions(val_index, session_sizes_full)
-        
+
         mdl_cv = make_narx(
             X = X_train,
             y = y_train,
@@ -227,7 +227,7 @@ def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_ter
             max_delay = n_lags,
             poly_degree = n_polys,
             session_sizes = session_sizes_train,
-            max_candidates = 10000,
+            max_candidates = 1000,
         )
         mdl_cv.fit(
             X=X_train,
@@ -236,7 +236,7 @@ def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_ter
             session_sizes = session_sizes_train,
             verbose=2,
         )
-        
+
         y_val_pred = _predict(
             mdl_cv,
             X_val,
@@ -244,14 +244,14 @@ def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_ter
             n_init,
             session_sizes_val,
         )
-        
+
         scores.append(_compute_metrics(y_val, y_val_pred, n_init, session_sizes_val, print_results=print_results))
     return scores
 
 def _prepare_data(train_val):
     if not isinstance(train_val, tuple):
         train_val = (train_val,)
-    
+
     X_full = np.concatenate([session.u for session in train_val]).reshape(-1, 1)
     y_full = np.concatenate([session.y for session in train_val])
     session_sizes_full = [len(session.u) for session in train_val]
@@ -262,16 +262,16 @@ def _split_sessions(indices, full_sizes):
         return []
     start_idx = indices[0]
     end_idx = indices[-1] + 1
-    
+
     session_sizes = []
     acc = 0
     for sz in full_sizes:
         inter_a = max(acc, start_idx)
         inter_b = min(acc+sz, end_idx)
-        
+
         if inter_b > inter_a:
             session_sizes.append(inter_b - inter_a)
-            
+
         acc += sz
         if acc >= end_idx:
             break
