@@ -19,7 +19,7 @@ def evaluate(
     max_delay,
     poly_degree,
 ):
-    X_full, y_full, session_sizes_full, n_init = _get_train(data)
+    X_full, y_full, session_sizes_full, n_init = _get_data(data)
 
     scores = _cross_validation(
         X_full,
@@ -57,7 +57,7 @@ def hpopt(
     poly_u: int,
     n_trials: int,
 ):
-    X_full, y_full, session_sizes_full, n_init = _get_train(data)
+    X_full, y_full, session_sizes_full, n_init = _get_data(data)
 
     study = optuna.create_study(
         direction="maximize",
@@ -125,7 +125,7 @@ def _objective(
         return float('-inf')
 
 
-def _get_train(data: str):
+def _get_data(data: str, return_test: bool = False):
     match data:
         case "EMPS":
             train_val, test = nonlinear_benchmarks.EMPS()
@@ -144,13 +144,66 @@ def _get_train(data: str):
         case _:
             raise ValueError(f"Unknown dataset: {data}")
 
-    X_full, y_full, session_sizes_full = _prepare_data(train_val)
+    if return_test:
+        X_full, y_full, session_sizes_full = _prepare_data(test)
+    else:
+        X_full, y_full, session_sizes_full = _prepare_data(train_val)
 
     if isinstance(test, tuple):
         n_init = test[0].state_initialization_window_length
     else:
         n_init = test.state_initialization_window_length
     return X_full, y_full, session_sizes_full, n_init
+
+def test_opt(data, results_path: str, print_results=True, return_metric: str = "RMSE"):
+    study = optuna.load_study(
+        study_name="fastcan_narx",
+        storage=f"sqlite:///{results_path}/fastcan_{data}.db",
+    )
+    best_params = study.best_params
+
+    score = test(
+        data,
+        n_terms=best_params['n_terms'],
+        n_lags=best_params['max_delay'],
+        n_polys=best_params['poly_degree'],
+        print_results=print_results,
+        return_metric=return_metric,
+    )
+    return score
+
+def test(data, n_terms, n_lags, n_polys, print_results=True, return_metric: str = "RMSE"):
+    X_train, y_train, session_sizes_train, n_init = _get_data(data)
+    X_test, y_test, session_sizes_test, _ = _get_data(data, return_test=True)
+
+    mdl = make_narx(
+        X = X_train,
+        y = y_train,
+        n_terms_to_select = n_terms,
+        max_delay = n_lags,
+        poly_degree = n_polys,
+        session_sizes = session_sizes_train,
+        max_candidates = 10000,
+    )
+    mdl.fit(
+        X=X_train,
+        y=y_train,
+        coef_init="one_step_ahead",
+        session_sizes = session_sizes_train,
+        verbose=2,
+    )
+    
+    y_val_pred = _predict(
+        mdl,
+        X_test,
+        y_test,
+        n_init,
+        session_sizes_test,
+    )
+        
+    return _compute_metrics(
+        y_test, y_val_pred, n_init, session_sizes_test, print_results=print_results, return_metric=return_metric
+    )
 
 def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_terms, n_lags, n_polys, print_results=True):
     tscv = TimeSeriesSplit(n_splits=n_folds)
@@ -245,7 +298,7 @@ def _predict(mdl: NARX, X_full, y_full, n_init, session_sizes):
     y_hat_full = np.concatenate(y_hat_full)
     return y_hat_full
 
-def _compute_metrics(y_true_full, y_pred_full, n_init, session_sizes, print_results = True):
+def _compute_metrics(y_true_full, y_pred_full, n_init, session_sizes, print_results = True, return_metric: str = "R-squared"):
     rmse = []
     nrmse = []
     r2 = []
@@ -271,4 +324,16 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, session_sizes, print_resu
         print(f"R-squared: {np.mean(r2)}")
         print(f'MAE: {np.mean(mae)}')
         print(f"fit index: {np.mean(fidx)}")
-    return np.mean(r2)
+    match return_metric:
+        case "RMSE":
+            return np.mean(rmse)
+        case "NRMSE":
+            return np.mean(nrmse)
+        case "R-squared":
+            return np.mean(r2)
+        case "MAE":
+            return np.mean(mae)
+        case "fit_index":
+            return np.mean(fidx)
+        case _:
+            raise ValueError(f"Unknown metric: {return_metric}")

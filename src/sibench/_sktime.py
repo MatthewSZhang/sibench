@@ -21,7 +21,7 @@ def evaluate(
     lags: int,
     trend: str,
 ):
-    df_full, n_init = _get_train(data)
+    df_full, n_init = _get_data(data)
 
     r2 = _cross_validation(
         df_full,
@@ -45,7 +45,7 @@ def hpopt(
     max_lags: int,
     n_trials: int,
 ):
-    df_full, n_init = _get_train(data)
+    df_full, n_init = _get_data(data)
 
     study = optuna.create_study(
         direction="maximize",
@@ -88,7 +88,7 @@ def _objective(
     )
     return r2
 
-def _get_train(data: str):
+def _get_data(data: str, return_test: bool = False, return_panel: bool = False):
     match data:
         case "EMPS":
             train_val, test = nonlinear_benchmarks.EMPS()
@@ -107,12 +107,25 @@ def _get_train(data: str):
         case _:
             raise ValueError(f"Unknown dataset: {data}")
 
-    df_full = _prepare_data(train_val)
+    if return_test:
+        df_full = _prepare_data(test)
+    else:
+        df_full = _prepare_data(train_val)
 
     if isinstance(test, tuple):
         n_init = test[0].state_initialization_window_length
     else:
         n_init = test.state_initialization_window_length
+    
+    if return_panel:
+        df_panel = []
+        for i, df_data in enumerate(df_full):
+            df_data["instances"] = i
+            df_data["timepoints"] = np.arange(len(df_data))
+            df_panel.append(df_data)
+        df_full = pd.concat(df_panel)
+        df_full = df_full.set_index(["instances", "timepoints"])
+    
     return df_full, n_init
 
 def _prepare_data(train_val):
@@ -122,6 +135,69 @@ def _prepare_data(train_val):
 
     return df_full
 
+
+def test_opt(data, results_path):
+    study = optuna.load_study(
+        study_name="sktime_auto_reg",
+        storage=f"sqlite:///{results_path}/sktime_{data}.db"
+    )
+    best_params = study.best_params
+
+    score = test(
+        data,
+        lags=best_params['lags'],
+        trend=best_params['trend'],
+        results_path=results_path,
+        return_metric="RMSE"
+    )
+    print(f"Test RMSE with best hyperparameters: {score:.4f}")
+    return score
+
+def test(data, lags, trend, results_path, return_metric: str = "RMSE"):
+    df_train, _ = _get_data(data, return_panel=True)
+    df_test, n_init = _get_data(data, return_test=True, return_panel=True)
+
+
+    mdl = AutoREG(lags=lags, trend=trend)
+    mdl.fit(y=df_train[["y"]], X=df_train[["u"]])
+    y_hat = _predict(mdl, df_test)
+    
+    df_test["y_hat"] = y_hat
+    y_true_list = []
+    y_hat_list = []
+
+    for _, group in df_test.groupby(level=0, sort=False):
+        y_true_list.append(group["y"].values)
+        y_hat_list.append(group["y_hat"].values)
+
+    score = _compute_metrics(y_true_list, y_hat_list, n_init, print_results=True, return_metric=return_metric)
+    return score
+
+    
+
+def _predict(mdl, df_data):
+    if isinstance(df_data.index, pd.MultiIndex):
+        y_hat_list = []
+        for i, group in df_data.groupby(level=0, sort=False):
+            fh = ForecastingHorizon(group.index.get_level_values(1), is_relative=False)
+            y_pred = mdl.predict(X=group[["u"]], fh=fh).values
+
+            divergence_indices = np.where((y_pred > 1e20) | np.isnan(y_pred) | np.isinf(y_pred))[0]
+            if divergence_indices.size > 0:
+                y_pred[divergence_indices[0]:] = 1e20
+            y_hat_list.append(y_pred)
+            
+        y_hat = np.concatenate(y_hat_list)
+        return y_hat
+    else:
+        fh = ForecastingHorizon(df_data.index, is_relative=False)
+        y_hat = mdl.predict(X=df_data[["u"]], fh=fh).values
+
+        divergence_indices = np.where((y_hat > 1e20) | np.isnan(y_hat) | np.isinf(y_hat))[0]
+        if divergence_indices.size > 0:
+            y_hat[divergence_indices[0]:] = 1e20
+
+        return y_hat
 
 def _cross_validation(df_full, n_folds, n_init, lags, trend, print_results=True):
     tscv = TimeSeriesSplit(n_splits=n_folds)
@@ -142,12 +218,7 @@ def _cross_validation(df_full, n_folds, n_init, lags, trend, print_results=True)
                 mdl = AutoREG(lags=lags, trend=trend)
 
                 mdl.fit(y=df_train["y"], X=df_train[["u"]])
-                fh = ForecastingHorizon(df_val.index, is_relative=False)
-                y_hat = mdl.predict(X=df_val[["u"]], fh=fh).values
-
-                divergence_indices = np.where((y_hat > 1e20) | np.isnan(y_hat) | np.isinf(y_hat))[0]
-                if divergence_indices.size > 0:
-                    y_hat[divergence_indices[0]:] = 1e20
+                y_hat = _predict(mdl, df_val)
 
                 y_true = df_val["y"].values
                 y_hat_full.append(y_hat)
@@ -159,7 +230,7 @@ def _cross_validation(df_full, n_folds, n_init, lags, trend, print_results=True)
     return _compute_metrics(y_true_full, y_hat_full, n_init, print_results=print_results)
 
 
-def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
+def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True, return_metric: str = "R-squared"):
     rmse = []
     nrmse = []
     r2 = []
@@ -181,4 +252,16 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
         print(f"R-squared: {np.mean(r2)}")
         print(f'MAE: {np.mean(mae)}')
         print(f"fit index: {np.mean(fidx)}")
-    return np.mean(r2)
+    match return_metric:
+        case "RMSE":
+            return np.mean(rmse)
+        case "NRMSE":
+            return np.mean(nrmse)
+        case "R-squared":
+            return np.mean(r2)
+        case "MAE":
+            return np.mean(mae)
+        case "fit_index":
+            return np.mean(fidx)
+        case _:
+            raise ValueError(f"Unknown metric: {return_metric}")

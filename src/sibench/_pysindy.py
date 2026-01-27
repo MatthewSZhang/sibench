@@ -42,7 +42,7 @@ def hpopt(
     n_trials: int,
 ):
     integrator_kws = {"method": "LSODA", "rtol": rtol, "atol": atol}
-    X_full, y_full, dt_full, n_init = _get_train(data)
+    X_full, y_full, dt_full, n_init = _get_data(data)
 
     study = optuna.create_study(
         direction="maximize",
@@ -140,7 +140,7 @@ def evaluate(
     rtol,
     atol,
 ):
-    X_full, y_full, dt_full, n_init = _get_train(data)
+    X_full, y_full, dt_full, n_init = _get_data(data)
 
     integrator_kws = {'method': 'LSODA', 'rtol': rtol, 'atol': atol}
 
@@ -161,7 +161,7 @@ def evaluate(
     print(f"CV R2: {avg_score:.4f}")
     return avg_score
 
-def _get_train(data: str):
+def _get_data(data: str, return_test: bool = False):
     match data:
         case "EMPS":
             train_val, test = nonlinear_benchmarks.EMPS()
@@ -180,7 +180,10 @@ def _get_train(data: str):
         case _:
             raise ValueError(f"Unknown dataset: {data}")
 
-    X_full, y_full, dt_full = _prepare_data(train_val)
+    if return_test:
+        X_full, y_full, dt_full = _prepare_data(test)
+    else:
+        X_full, y_full, dt_full = _prepare_data(train_val)
 
     if isinstance(test, tuple):
         n_init = test[0].state_initialization_window_length
@@ -197,7 +200,7 @@ def _prepare_data(train_val):
     return X_full, y_full, dt_full
 
 
-def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
+def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True, return_metric: str = "R-squared"):
     rmse = []
     nrmse = []
     r2 = []
@@ -219,7 +222,19 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
         print(f"R-squared: {np.mean(r2)}")
         print(f'MAE: {np.mean(mae)}')
         print(f"fit index: {np.mean(fidx)}")
-    return np.mean(r2)
+    match return_metric:
+        case "RMSE":
+            return np.mean(rmse)
+        case "NRMSE":
+            return np.mean(nrmse)
+        case "R-squared":
+            return np.mean(r2)
+        case "MAE":
+            return np.mean(mae)
+        case "fit_index":
+            return np.mean(fidx)
+        case _:
+            raise ValueError(f"Unknown metric: {return_metric}")
 
 def _make_sindyc(X_full, y_full, dt_full, n_degrees, n_freqs, n_orders, threshold, alpha):
     poly_library = ps.PolynomialLibrary(degree=n_degrees)
@@ -255,6 +270,54 @@ def _predict(model: SINDy, X_full, y_full, dt_full, n_steps, integrator_kws):
         )
         y_hat_full.append(y_hat)
     return y_hat_full
+
+
+def test_opt(data, results_path: str, return_metric="RMSE"):
+    study = optuna.load_study(
+        study_name="pysindy_stlsq",
+        storage=f"sqlite:///{results_path}/pysindy_{data}.db",
+    )
+    best_params = study.best_params
+
+    return test(
+        data,
+        best_params['degree'],
+        best_params['freq'],
+        best_params['order'],
+        best_params['threshold'],
+        best_params['alpha'],
+        rtol=1e-3,
+        atol=1e-3,
+        return_metric=return_metric,
+    )
+
+
+def test(data, n_degrees, n_freqs, n_orders, threshold, alpha, rtol, atol, return_metric="RMSE"):
+    n_steps = 100 # Too slow to simulate full length of validation data
+    X_train, y_train, dt_train, _ = _get_data(data, return_test=False)
+    X_test, y_test, dt_test, n_init = _get_data(data, return_test=True)
+
+    integrator_kws = {"method": "LSODA", "rtol": rtol, "atol": atol}
+
+    mdl = _make_sindyc(
+        X_train,
+        y_train,
+        dt_train,
+        n_degrees,
+        n_freqs,
+        n_orders,
+        threshold,
+        alpha,
+    )
+    y_test_pred = _predict(
+        mdl,
+        X_test,
+        y_test,
+        dt_test,
+        n_steps=n_steps,
+        integrator_kws=integrator_kws,
+    )
+    return _compute_metrics(y_test, y_test_pred, n_init, print_results=True, return_metric=return_metric)
 
 def _cross_validation(
     X_full, y_full, dt_full, n_init, n_degrees, n_freqs, n_orders, threshold, alpha, integrator_kws, print_results=True

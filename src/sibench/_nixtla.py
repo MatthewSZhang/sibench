@@ -8,12 +8,12 @@ from statsforecast.models import AutoARIMA
 
 import optuna
 import click
-from rich.progress import track
+from rich.progress import Progress, TimeRemainingColumn
 
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Data Name")
-@click.option("--n_folds", type=int, default=5, help="Number of folds (ignored)")
+@click.option("--n_folds", type=int, default=3, help="Number of folds (ignored)")
 @click.option("--season_length", type=int, default=50, help="Seasonality")
 @click.option("--max_p", type=int, default=2, help="Max AR")
 @click.option("--max_q", type=int, default=2, help="Max MA")
@@ -28,7 +28,7 @@ def evaluate(
     max_P,
     max_Q,
 ):
-    df_full, n_init, freq_str = _get_train(data)
+    df_full, n_init, freq_str = _get_data(data)
 
     sf = _make_nixtla(
         season_length,
@@ -52,7 +52,7 @@ def evaluate(
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Data Name")
-@click.option("--n_folds", type=int, default=5, help="Number of folds (ignored)")
+@click.option("--n_folds", type=int, default=3, help="Number of folds (ignored)")
 @click.option("--season_max", type=int, default=100, help="Max Seasonality")
 @click.option("--max_p", type=int, default=5, help="Max AR")
 @click.option("--max_q", type=int, default=5, help="Max MA")
@@ -69,7 +69,7 @@ def hpopt(
     max_Q: int,
     n_trials: int,
 ):
-    df_full, n_init, freq_str = _get_train(data)
+    df_full, n_init, freq_str = _get_data(data)
 
     study = optuna.create_study(
         direction="maximize",
@@ -137,7 +137,7 @@ def _objective(
     )
     return r2
 
-def _get_train(data: str):
+def _get_data(data: str, return_test: bool = False):
     match data:
         case "EMPS":
             train_val, test = nonlinear_benchmarks.EMPS()
@@ -156,17 +156,22 @@ def _get_train(data: str):
         case _:
             raise ValueError(f"Unknown dataset: {data}")
 
-    if not isinstance(train_val, tuple):
-        train_val = (train_val,)
+    if return_test:
+        raw_data = test
+    else:
+        raw_data = train_val
+
+    if not isinstance(raw_data, tuple):
+        raw_data = (raw_data,)
     df_full = []
-    for i in range(len(train_val)):
-        freq_str = f"{int(float(train_val[i].sampling_time) * 1000000)}us"
-        ds = pd.date_range(start='1970-01-01', periods=len(train_val[i].y), freq=freq_str)
+    for i in range(len(raw_data)):
+        freq_str = f"{int(float(raw_data[i].sampling_time) * 1000000)}us"
+        ds = pd.date_range(start='1970-01-01', periods=len(raw_data[i].y), freq=freq_str)
         df_part = pd.DataFrame({
             "unique_id": f"{data}_{i}",  
             "ds": ds, 
-            "y": train_val[i].y.flatten(), 
-            "u": train_val[i].u.flatten()
+            "y": raw_data[i].y.flatten(), 
+            "u": raw_data[i].u.flatten()
         })
         df_full.append(df_part)
 
@@ -187,33 +192,111 @@ def _make_nixtla(season_length, max_p, max_q, max_P, max_Q, freq_str):
     sf = StatsForecast(
         models=models, 
         freq=freq_str, 
-        n_jobs=1,
+        n_jobs=-1, # Parallelize across unique_ids if provided in batch
     )
     return sf
 
+
+def test_opt(data, results_path: str, return_metric: str = "RMSE"):
+    study = optuna.load_study(
+        study_name="nixtla_autoarima",
+        storage=f"sqlite:///{results_path}/nixtla_{data}.db",
+    )
+    best_params = study.best_params
+
+    season_length = best_params['season_length']
+    max_p = best_params['max_p']
+    max_q = best_params['max_q']
+    max_P = best_params['max_P']
+    max_Q = best_params['max_Q']
+
+    score = test(
+        data,
+        season_length,
+        max_p,
+        max_q,
+        max_P,
+        max_Q,
+        return_metric=return_metric
+    )
+    print(f"Test RMSE with best hyperparameters: {score:.4f}")
+
+
+def test(data, season_length, max_p, max_q, max_P, max_Q, return_metric="RMSE"):
+    df_test, n_init, freq_str = _get_data(data, return_test=True)
+
+    sf = _make_nixtla(
+        season_length,
+        max_p,
+        max_q,
+        max_P,
+        max_Q,
+        freq_str
+    )
+    
+    y_hat_full = []
+    y_true_full = []
+
+    for i in range(len(df_test)):
+        df_test_part = df_test[i]
+        
+        # The beginning of test data is used as initial condition
+        df_history = df_test_part.iloc[:n_init]
+        df_future = df_test_part.iloc[n_init:]
+        X_future = df_future.drop(columns=['y'])
+        
+        # Forecast using the history
+        # We treat each test series as independent and do not use training data
+        fcst = sf.forecast(df=df_history, h=len(X_future), X_df=X_future)
+        
+        y_hat = fcst["AutoARIMA"].values
+        y_true = df_future["y"].values
+        
+        y_hat_full.append(y_hat)
+        y_true_full.append(y_true)
+
+    # Since we manually excluded the initialization period, we pass n_init=0
+    return _compute_metrics(
+        y_true_full, 
+        y_hat_full, 
+        n_init=0, 
+        print_results=True, 
+        return_metric=return_metric
+    )
+
+
+
 def _cross_validation(df_full, n_folds, n_init, sf, print_results=True):
+    n_steps = 300 # Too slow to do full length CV with Nixtla
     tscv = TimeSeriesSplit(n_splits=n_folds)
     y_hat_full = []
     y_true_full = []
         
-    for i, df_data in enumerate(df_full):
-        for train_index, val_index in track(
-            tscv.split(df_data),
-            total=n_folds,
-            description=f"Processing time series {i+1}/{n_folds}"
-        ):
-            df_train = df_data.iloc[train_index]
-            df_val = df_data.iloc[val_index]
-            df_val_X = df_val.drop(columns=['y'])
-            fcst = sf.forecast(df=df_train, h=len(df_val_X), X_df=df_val_X)
-            y_hat = fcst["AutoARIMA"].values
-            y_true = df_val["y"].values
-            y_hat_full.append(y_hat)
-            y_true_full.append(y_true)
+    columns = [*Progress.get_default_columns()]
+    columns[-1] = TimeRemainingColumn(elapsed_when_finished=True)
+    with Progress(*columns, auto_refresh=True) as progress:
+        series_task = progress.add_task("[green]Processing series...", total=len(df_full))
+
+        for i, df_data in enumerate(df_full):
+            fold_task = progress.add_task(f"[cyan]Series {i+1}/{len(df_full)}", total=n_folds) # Create new task
+            for train_index, val_index in tscv.split(df_data):
+                df_train = df_data.iloc[train_index]
+                df_val = df_data.iloc[val_index]
+                df_val_X = df_val.drop(columns=['y'])
+                fcst = sf.forecast(df=df_train[-n_steps:], h=len(df_val_X), X_df=df_val_X)
+                y_hat = fcst["AutoARIMA"].values
+                y_true = df_val["y"].values
+                y_hat_full.append(y_hat)
+                y_true_full.append(y_true)
+                progress.advance(fold_task)
+            
+            progress.remove_task(fold_task) # Clean up task
+            progress.advance(series_task)
+
     return _compute_metrics(y_true_full, y_hat_full, n_init, print_results=print_results)
 
 
-def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
+def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True, return_metric: str = "R-squared"):
     rmse = []
     nrmse = []
     r2 = []
@@ -235,4 +318,16 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True):
         print(f"R-squared: {np.mean(r2)}")
         print(f'MAE: {np.mean(mae)}')
         print(f"fit index: {np.mean(fidx)}")
-    return np.mean(r2)
+    match return_metric:
+        case "RMSE":
+            return np.mean(rmse)
+        case "NRMSE":
+            return np.mean(nrmse)
+        case "R-squared":
+            return np.mean(r2)
+        case "MAE":
+            return np.mean(mae)
+        case "fit_index":
+            return np.mean(fidx)
+        case _:
+            raise ValueError(f"Unknown metric: {return_metric}")
