@@ -295,6 +295,11 @@ def _predict(mdl: NARX, X_full, y_full, n_init, session_sizes):
             start_idx = session_cumsum[i - 1]
         end_idx = session
         X = X_full[start_idx:end_idx]
+
+        if len(X) <= start_pos:
+            y_hat_full.append(y_full[start_idx:end_idx])
+            continue
+
         y_init = y_full[start_idx:start_idx + n_init]
         y_hat = mdl.predict(
             X = X[start_pos:],
@@ -320,6 +325,10 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, session_sizes, print_resu
         end_idx = session
         y_true = y_true_full[start_idx:end_idx]
         y_pred = y_pred_full[start_idx:end_idx]
+
+        if len(y_true) <= n_init:
+            continue
+
         rmse.append(RMSE(y_true[n_init:], y_pred[n_init:]))
         nrmse.append(NRMSE(y_true[n_init:], y_pred[n_init:]))
         r2.append(R_squared(y_true[n_init:], y_pred[n_init:]))
