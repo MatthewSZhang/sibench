@@ -196,6 +196,7 @@ def test(data, n_terms, n_lags, n_polys, print_results=True, return_metric: str 
         coef_init="one_step_ahead",
         session_sizes = session_sizes_train,
         verbose=2,
+        max_nfev = 200,
     )
 
     y_val_pred = _predict(
@@ -235,6 +236,7 @@ def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_ter
             coef_init="one_step_ahead",
             session_sizes = session_sizes_train,
             verbose=2,
+            max_nfev = 200,
         )
 
         y_val_pred = _predict(
