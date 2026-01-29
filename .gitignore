@@ -8,5 +8,5 @@ __pycache__/
 
 # This project
 *.db
-*.db-journal
+*.db-*
 *.ipynb

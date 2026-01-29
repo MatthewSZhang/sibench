@@ -6,6 +6,7 @@ from fastcan.narx import NARX, make_narx
 import optuna
 import click
 import sqlite3
+import os
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Name of the dataset")
@@ -58,9 +59,11 @@ def hpopt(
     poly_u: int,
     n_trials: int,
 ):
+    os.makedirs("results", exist_ok=True)
+    db_path = os.path.abspath(f"results/fastcan_{data}.db")
+
     X_full, y_full, session_sizes_full, n_init = _get_data(data)
 
-    db_path = f"results/fastcan_{data}.db"
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
 
@@ -123,7 +126,7 @@ def _objective(
             n_terms=n_terms,
             n_lags=max_delay,
             n_polys=poly_degree,
-            print_results=False,
+            print_results=True,
         )
         return np.mean(r2)
     except Exception:

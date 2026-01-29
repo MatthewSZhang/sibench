@@ -9,6 +9,7 @@ import pandas as pd
 import optuna
 import click
 import sqlite3
+import os
 
 
 @click.command()
@@ -46,9 +47,11 @@ def hpopt(
     max_lags: int,
     n_trials: int,
 ):
+    os.makedirs("results", exist_ok=True)
+    db_path = os.path.abspath(f"results/sktime_{data}.db")
+
     df_full, n_init = _get_data(data)
 
-    db_path = f"results/sktime_{data}.db"
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
 

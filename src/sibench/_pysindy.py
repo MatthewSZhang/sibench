@@ -9,6 +9,7 @@ import optuna
 import click
 from rich.progress import track
 import sqlite3
+import os
 
 
 @click.command()
@@ -25,6 +26,7 @@ import sqlite3
 @click.option("--a-u", default=1.0, type=float, help="STLSQ: Upper bound for alpha")
 @click.option("--rtol", default=1e-3, type=float, help="Integrator relative tolerance")
 @click.option("--atol", default=1e-3, type=float, help="Integrator absolute tolerance")
+@click.option("--n-folds", default=5, type=int, help="Number of folds for cross validation")
 @click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
 def hpopt(
     data: str,
@@ -40,12 +42,15 @@ def hpopt(
     a_u: float,
     rtol: float,
     atol: float,
+    n_folds: int,
     n_trials: int,
 ):
+    os.makedirs("results", exist_ok=True)
+    db_path = os.path.abspath(f"results/pysindy_{data}.db")
+
     integrator_kws = {"method": "LSODA", "rtol": rtol, "atol": atol}
     X_full, y_full, dt_full, n_init = _get_data(data)
 
-    db_path = f"results/pysindy_{data}.db"
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
 
@@ -74,6 +79,7 @@ def hpopt(
         a_l,
         a_u,
         integrator_kws,
+        n_folds,
     ), n_trials=n_trials)
 
     print("Best params:", study.best_params)
@@ -97,6 +103,7 @@ def _objective(
     a_l,
     a_u,
     integrator_kws,
+    n_folds,
 
 ):
     degree = trial.suggest_int('degree', d_l, d_u)
@@ -119,6 +126,7 @@ def _objective(
             threshold,
             alpha,
             integrator_kws=integrator_kws,
+            n_folds=n_folds,
             print_results=True,
         )
         return np.mean(r2)
@@ -128,6 +136,7 @@ def _objective(
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Name of the dataset")
+@click.option("--n-folds", default=5, type=int, help="Number of folds for cross validation")
 @click.option("--degree", type=int, required=True, help="Number of polynomial degrees")
 @click.option("--freq", type=int, required=True, help="Number of Fourier frequencies")
 @click.option("--order", type=int, required=True, help="Order of finite difference")
@@ -137,6 +146,7 @@ def _objective(
 @click.option("--atol", default=1e-3, type=float, help="Integrator absolute tolerance")
 def evaluate(
     data: str,
+    n_folds,
     degree,
     freq,
     order,
@@ -160,6 +170,7 @@ def evaluate(
         threshold,
         alpha,
         integrator_kws=integrator_kws,
+        n_folds=n_folds,
         print_results=True,
     )
     avg_score = np.mean(scores)
@@ -201,7 +212,7 @@ def _prepare_data(train_val):
         train_val = (train_val,)
     X_full = [session.u.reshape(-1, 1) for session in train_val]
     y_full = [session.y.reshape(-1, 1) for session in train_val]
-    dt_full = [session.sampling_time for session in train_val]
+    dt_full = [float(session.sampling_time) for session in train_val]
     return X_full, y_full, dt_full
 
 
@@ -260,12 +271,13 @@ def _make_sindyc(X_full, y_full, dt_full, n_degrees, n_freqs, n_orders, threshol
     model.fit(y_full, t=dt_full, u=X_full)
     return model
 
-def _predict(model: SINDy, X_full, y_full, dt_full, n_steps, integrator_kws):
+def _predict(model: SINDy, X_full, y_full, dt_full, integrator_kws):
     def u_func(t, u, dt):
         return u[np.round(t / dt).astype(int)]
     
     y_hat_full = []
     for i, dt in enumerate(dt_full):
+        n_steps = X_full[i].shape[0]
         t_steps = np.arange(0, dt*n_steps, dt)
         y_hat = model.simulate(
             y_full[i][0], 
@@ -298,7 +310,6 @@ def test_opt(data, results_path: str, return_metric="RMSE"):
 
 
 def test(data, n_degrees, n_freqs, n_orders, threshold, alpha, rtol, atol, return_metric="RMSE"):
-    n_steps = 100 # Too slow to simulate full length of validation data
     X_train, y_train, dt_train, _ = _get_data(data, return_test=False)
     X_test, y_test, dt_test, n_init = _get_data(data, return_test=True)
 
@@ -319,22 +330,20 @@ def test(data, n_degrees, n_freqs, n_orders, threshold, alpha, rtol, atol, retur
         X_test,
         y_test,
         dt_test,
-        n_steps=n_steps,
         integrator_kws=integrator_kws,
     )
     return _compute_metrics(y_test, y_test_pred, n_init, print_results=True, return_metric=return_metric)
 
 def _cross_validation(
-    X_full, y_full, dt_full, n_init, n_degrees, n_freqs, n_orders, threshold, alpha, integrator_kws, print_results=True
+    X_full, y_full, dt_full, n_init, n_degrees, n_freqs, n_orders, threshold, alpha, integrator_kws, n_folds=5, print_results=True
 ):
-    n_steps = 100 # Too slow to simulate full length of validation data
     n_sessions = len(X_full)
     
     
     if n_sessions < 2:
         splits = [([0], [0])]
     else:
-        kf = KFold(n_splits=min(n_sessions, 3))
+        kf = KFold(n_splits=min(n_sessions, n_folds))
         splits = list(kf.split(X_full))
         
     scores = []
@@ -360,7 +369,6 @@ def _cross_validation(
             X_val,
             y_val,
             dt_val,
-            n_steps=n_steps,
             integrator_kws=integrator_kws,
         )
         

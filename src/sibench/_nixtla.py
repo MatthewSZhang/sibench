@@ -10,6 +10,7 @@ import optuna
 import click
 from rich.progress import Progress, TimeRemainingColumn
 import sqlite3
+import os
 
 
 @click.command()
@@ -70,10 +71,12 @@ def hpopt(
     max_Q: int,
     n_trials: int,
 ):
+    os.makedirs("results", exist_ok=True)
+    # Enable WAL mode for SQLite to allow safe reading/copying while writing
+    db_path = os.path.abspath(f"results/nixtla_{data}.db")
+
     df_full, n_init, freq_str = _get_data(data)
 
-    # Enable WAL mode for SQLite to allow safe reading/copying while writing
-    db_path = f"results/nixtla_{data}.db"
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
 
