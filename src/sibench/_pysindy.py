@@ -339,9 +339,11 @@ def _cross_validation(
 ):
     n_sessions = len(X_full)
     
-    
     if n_sessions < 2:
         splits = [([0], [0])]
+    elif n_folds == 1:
+        indices = np.arange(n_sessions)
+        splits = [(indices[:-1], indices[-1:])]
     else:
         kf = KFold(n_splits=min(n_sessions, n_folds))
         splits = list(kf.split(X_full))

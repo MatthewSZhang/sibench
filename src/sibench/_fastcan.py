@@ -215,9 +215,18 @@ def test(data, n_terms, n_lags, n_polys, print_results=True, return_metric: str 
     )
 
 def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_terms, n_lags, n_polys, print_results=True):
-    tscv = TimeSeriesSplit(n_splits=n_folds)
+    if n_folds == 1:
+        n_samples = len(X_full)
+        test_size = n_samples // 2
+        train_index = np.arange(n_samples - test_size)
+        val_index = np.arange(n_samples - test_size, n_samples)
+        splits = [(train_index, val_index)]
+    else:
+        tscv = TimeSeriesSplit(n_splits=n_folds)
+        splits = tscv.split(X_full)
+        
     scores = []
-    for train_index, val_index in tscv.split(X_full):
+    for train_index, val_index in splits:
         X_train, X_val = X_full[train_index], X_full[val_index]
         y_train, y_val = y_full[train_index], y_full[val_index]
 
