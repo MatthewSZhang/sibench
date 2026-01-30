@@ -15,12 +15,12 @@ import os
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Data Name")
-@click.option("--n_folds", type=int, default=3, help="Number of folds (ignored)")
-@click.option("--season_length", type=int, default=50, help="Seasonality")
-@click.option("--max_p", type=int, default=2, help="Max AR")
-@click.option("--max_q", type=int, default=2, help="Max MA")
-@click.option("--max_P", "max_P", type=int, default=1, help="Max Seasonal AR")
-@click.option("--max_Q", "max_Q", type=int, default=1, help="Max Seasonal MA")
+@click.option("--n-folds", type=int, default=3, help="Number of folds (ignored)")
+@click.option("--season-length", type=int, default=50, help="Seasonality")
+@click.option("--max-p", type=int, default=2, help="Max AR")
+@click.option("--max-q", type=int, default=2, help="Max MA")
+@click.option("--max-P", "max_P", type=int, default=1, help="Max Seasonal AR")
+@click.option("--max-Q", "max_Q", type=int, default=1, help="Max Seasonal MA")
 def evaluate(
     data: str,
     n_folds: int,
@@ -38,7 +38,7 @@ def evaluate(
         max_q,
         max_P,
         max_Q,
-        freq_str
+        freq_str,
     )
 
     r2 = _cross_validation(
@@ -54,13 +54,13 @@ def evaluate(
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Data Name")
-@click.option("--n_folds", type=int, default=3, help="Number of folds (ignored)")
-@click.option("--season_max", type=int, default=100, help="Max Seasonality")
-@click.option("--max_p", type=int, default=5, help="Max AR")
-@click.option("--max_q", type=int, default=5, help="Max MA")
-@click.option("--max_P", "max_P", type=int, default=1, help="Max Seasonal AR")
-@click.option("--max_Q", "max_Q", type=int, default=1, help="Max Seasonal MA")
-@click.option("--n_trials", type=int, default=None, help="Number of trials")
+@click.option("--n-folds", type=int, default=3, help="Number of folds (ignored)")
+@click.option("--season-max", type=int, default=100, help="Max Seasonality")
+@click.option("--max-p", type=int, default=5, help="Max AR")
+@click.option("--max-q", type=int, default=5, help="Max MA")
+@click.option("--max-P", "max_P", type=int, default=1, help="Max Seasonal AR")
+@click.option("--max-Q", "max_Q", type=int, default=1, help="Max Seasonal MA")
+@click.option("--n-trials", type=int, default=None, help="Number of trials")
 def hpopt(
     data: str,
     n_folds: int,
@@ -134,7 +134,7 @@ def _objective(
         max_q_suggest,
         max_P_suggest,
         max_Q_suggest,
-        freq_str
+        freq_str,
     )
 
     r2 = _cross_validation(
@@ -197,11 +197,13 @@ def _make_nixtla(season_length, max_p, max_q, max_P, max_Q, freq_str):
         max_q=max_q, # 1 to 5
         max_P=max_P, # 1 to 5
         max_Q=max_Q, # 1 to 5
+        trace=True,
     )]
     sf = StatsForecast(
         models=models, 
         freq=freq_str, 
         n_jobs=-1, # Parallelize across unique_ids if provided in batch
+        verbose=True
     )
     return sf
 
@@ -228,7 +230,7 @@ def test_opt(data, results_path: str, return_metric: str = "RMSE"):
         max_Q,
         return_metric=return_metric
     )
-    print(f"Test RMSE with best hyperparameters: {score:.4f}")
+    return score
 
 
 def test(data, season_length, max_p, max_q, max_P, max_Q, return_metric="RMSE"):
@@ -240,7 +242,7 @@ def test(data, season_length, max_p, max_q, max_P, max_Q, return_metric="RMSE"):
         max_q,
         max_P,
         max_Q,
-        freq_str
+        freq_str,
     )
     
     y_hat_full = []
@@ -276,8 +278,6 @@ def test(data, season_length, max_p, max_q, max_P, max_Q, return_metric="RMSE"):
 
 
 def _cross_validation(df_full, n_folds, n_init, sf, print_results=True):
-    n_steps = 100 # Too slow to do full length CV with Nixtla
-    tscv = TimeSeriesSplit(n_splits=n_folds)
     y_hat_full = []
     y_true_full = []
         
@@ -288,11 +288,20 @@ def _cross_validation(df_full, n_folds, n_init, sf, print_results=True):
 
         for i, df_data in enumerate(df_full):
             fold_task = progress.add_task(f"[cyan]Series {i+1}/{len(df_full)}", total=n_folds) # Create new task
-            for train_index, val_index in tscv.split(df_data):
+            
+            if n_folds > 1:
+                tscv = TimeSeriesSplit(n_splits=n_folds)
+                splitter = tscv.split(df_data)
+            else:
+                n_samples = len(df_data)
+                train_end = n_samples // 2
+                splitter = [(np.arange(train_end), np.arange(train_end, n_samples))]
+            
+            for train_index, val_index in splitter:
                 df_train = df_data.iloc[train_index]
                 df_val = df_data.iloc[val_index]
                 df_val_X = df_val.drop(columns=['y'])
-                fcst = sf.forecast(df=df_train[-n_steps:], h=len(df_val_X), X_df=df_val_X)
+                fcst = sf.forecast(df=df_train, h=len(df_val_X), X_df=df_val_X)
                 y_hat = fcst["AutoARIMA"].values
                 y_true = df_val["y"].values
                 y_hat_full.append(y_hat)
@@ -313,8 +322,7 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True, ret
     fidx = []
     n_sessions = len(y_pred_full)
     for i in range(n_sessions):
-        n_steps = y_pred_full[i].shape[0]
-        y_true = y_true_full[i][:n_steps]
+        y_true = y_true_full[i]
         y_pred = y_pred_full[i]
         rmse.append(RMSE(y_true[n_init:], y_pred[n_init:]))
         nrmse.append(NRMSE(y_true[n_init:], y_pred[n_init:]))
