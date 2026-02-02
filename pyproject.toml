@@ -28,6 +28,7 @@ opt-nixtla = "sibench._nixtla:hpopt"
 eval-nixtla = "sibench._nixtla:evaluate"
 opt-sktime = "sibench._sktime:hpopt"
 eval-sktime = "sibench._sktime:evaluate"
+results = "sibench._results:results"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
