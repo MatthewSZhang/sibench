@@ -1,6 +1,6 @@
 import nonlinear_benchmarks
 from nonlinear_benchmarks.error_metrics import RMSE, NRMSE, R_squared, MAE, fit_index
-from sklearn.model_selection import KFold
+from sklearn.model_selection import TimeSeriesSplit
 import numpy as np
 import pysindy as ps
 from pysindy.differentiation import FiniteDifference
@@ -339,26 +339,52 @@ def _cross_validation(
 ):
     n_sessions = len(X_full)
     
-    if n_sessions < 2:
-        splits = [([0], [0])]
-    elif n_folds == 1:
-        indices = np.arange(n_sessions)
-        splits = [(indices[:-1], indices[-1:])]
-    else:
-        kf = KFold(n_splits=min(n_sessions, n_folds))
-        splits = list(kf.split(X_full))
-        
-    scores = []
-    for train_index, val_index in track(splits, description="Processing folds"):
-        X_train, X_val = [X_full[i] for i in train_index], [X_full[i] for i in val_index]
-        y_train, y_val = [y_full[i] for i in train_index], [y_full[i] for i in val_index]
-        dt_train, dt_val = [dt_full[i] for i in train_index], [dt_full[i] for i in val_index]
 
+    scores = []
+    
+    # Generate splits for each session individually
+    # session_splits[i] will contain list of (train_idx, val_idx) for the i-th session
+    session_splits = []
+    for i in range(n_sessions):
+        tscv = TimeSeriesSplit(n_splits=n_folds)
+        # We need indices relative to the session, not global
+        splits = list(tscv.split(X_full[i]))
+        session_splits.append(splits)
+
+    # Now iterate over folds
+    for fold_idx in track(range(n_folds), description="Processing folds"):
+        X_train_fold = []
+        y_train_fold = []
+        dt_train_fold = []
         
+        X_val_fold = []
+        y_val_fold = []
+        dt_val_fold = []
+        
+        # Collect data for this fold from all sessions
+        for sess_idx in range(n_sessions):
+            train_indices, val_indices = session_splits[sess_idx][fold_idx]
+            
+            # Slice the session data
+            X_sess = X_full[sess_idx]
+            y_sess = y_full[sess_idx]
+            dt_sess = dt_full[sess_idx]
+            
+            # Append training chunks (each chunk is a separate trajectory in SINDy's view)
+            X_train_fold.append(X_sess[train_indices])
+            y_train_fold.append(y_sess[train_indices])
+            dt_train_fold.append(dt_sess) # dt is scalar per session
+            
+            # Append validation chunks
+            X_val_fold.append(X_sess[val_indices])
+            y_val_fold.append(y_sess[val_indices])
+            dt_val_fold.append(dt_sess)
+
+        # Train model on collected training trajectories
         mdl_cv = _make_sindyc(
-            X_train,
-            y_train,
-            dt_train,
+            X_train_fold,
+            y_train_fold,
+            dt_train_fold,
             n_degrees,
             n_freqs,
             n_orders,
@@ -366,13 +392,15 @@ def _cross_validation(
             alpha,
         )
         
+        # Validate on collected validation trajectories
         y_val_pred = _predict(
             mdl_cv,
-            X_val,
-            y_val,
-            dt_val,
+            X_val_fold,
+            y_val_fold,
+            dt_val_fold,
             integrator_kws=integrator_kws,
         )
         
-        scores.append(_compute_metrics(y_val, y_val_pred, n_init, print_results=print_results))
+        scores.append(_compute_metrics(y_val_fold, y_val_pred, n_init, print_results=print_results))
+        
     return scores

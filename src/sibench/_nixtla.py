@@ -55,7 +55,7 @@ def evaluate(
 @click.command()
 @click.option("--data", type=str, required=True, help="Data Name")
 @click.option("--n-folds", type=int, default=3, help="Number of folds (ignored)")
-@click.option("--season-max", type=int, default=100, help="Max Seasonality")
+@click.option("--season-max", type=int, default=50, help="Max Seasonality")
 @click.option("--max-p", type=int, default=5, help="Max AR")
 @click.option("--max-q", type=int, default=5, help="Max MA")
 @click.option("--max-P", "max_P", type=int, default=1, help="Max Seasonal AR")
@@ -287,7 +287,7 @@ def _cross_validation(df_full, n_folds, n_init, sf, print_results=True):
         series_task = progress.add_task("[green]Processing series...", total=len(df_full))
 
         for i, df_data in enumerate(df_full):
-            fold_task = progress.add_task(f"[cyan]Series {i+1}/{len(df_full)}", total=n_folds) # Create new task
+            fold_task = progress.add_task(f"[cyan]N-folds {i+1}/{n_folds}", total=n_folds) # Create new task
             
             if n_folds > 1:
                 tscv = TimeSeriesSplit(n_splits=n_folds)
