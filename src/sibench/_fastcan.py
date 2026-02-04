@@ -185,13 +185,14 @@ def test(data, n_terms, n_lags, n_polys, print_results=True, return_metric: str 
     X_test, y_test, session_sizes_test, _ = _get_data(data, return_test=True)
 
     mdl = make_narx(
-        X = X_train,
-        y = y_train,
-        n_terms_to_select = n_terms,
-        max_delay = n_lags,
-        poly_degree = n_polys,
-        session_sizes = session_sizes_train,
-        max_candidates = 1000,
+        X=X_train,
+        y=y_train,
+        n_terms_to_select=n_terms,
+        max_delay=n_lags,
+        poly_degree=n_polys,
+        session_sizes=session_sizes_train,
+        max_candidates=1000,
+        random_state=42,
     )
     mdl.fit(
         X=X_train,
@@ -234,13 +235,14 @@ def _cross_validation(X_full, y_full, n_init, session_sizes_full, n_folds, n_ter
         session_sizes_val = _split_sessions(val_index, session_sizes_full)
 
         mdl_cv = make_narx(
-            X = X_train,
-            y = y_train,
-            n_terms_to_select = n_terms,
-            max_delay = n_lags,
-            poly_degree = n_polys,
-            session_sizes = session_sizes_train,
-            max_candidates = 1000,
+            X=X_train,
+            y=y_train,
+            n_terms_to_select=n_terms,
+            max_delay=n_lags,
+            poly_degree=n_polys,
+            session_sizes=session_sizes_train,
+            max_candidates=1000,
+            random_state=42,
         )
         mdl_cv.fit(
             X=X_train,
