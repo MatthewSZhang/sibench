@@ -28,8 +28,10 @@ opt-nixtla = "sibench._nixtla:hpopt"
 eval-nixtla = "sibench._nixtla:evaluate"
 opt-sktime = "sibench._sktime:hpopt"
 eval-sktime = "sibench._sktime:evaluate"
+test-fastcan = "sibench._fastcan:test_cli"
+test-pysindy = "sibench._pysindy:test_cli"
+test-nixtla = "sibench._nixtla:test_cli"
 results = "sibench._results:results"
-worst = "sibench._results:worst_case"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]

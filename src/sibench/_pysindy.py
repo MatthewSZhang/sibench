@@ -10,6 +10,9 @@ import click
 from rich.progress import track
 import sqlite3
 import os
+import pandas as pd
+import time
+import tracemalloc
 
 
 @click.command()
@@ -353,11 +356,16 @@ def test(
     rtol,
     atol,
     return_metric="RMSE",
+    time_mem: str | None = None,
 ):
     X_train, y_train, dt_train, _ = _get_data(data, return_test=False)
     X_test, y_test, dt_test, n_init = _get_data(data, return_test=True)
 
     integrator_kws = {"method": "LSODA", "rtol": rtol, "atol": atol}
+
+    if time_mem:
+        tracemalloc.start()
+        start_time = time.time()
 
     mdl = _make_sindyc(
         X_train,
@@ -369,6 +377,25 @@ def test(
         threshold,
         alpha,
     )
+
+    if time_mem:
+        end_time = time.time()
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        results = pd.DataFrame(
+            [
+                {
+                    "Data": data,
+                    "pysindy_time": end_time - start_time,
+                    "pysindy_mem_mb": peak / 2**20,
+                }
+            ]
+        )
+        if os.path.exists(time_mem):
+            results.to_csv(time_mem, mode="a", header=False, index=False)
+        else:
+            results.to_csv(time_mem, mode="w", header=True, index=False)
+
     y_test_pred = _predict(
         mdl,
         X_test,
@@ -378,6 +405,40 @@ def test(
     )
     return _compute_metrics(
         y_test, y_test_pred, n_init, print_results=True, return_metric=return_metric
+    )
+
+
+@click.command()
+@click.option("--data", type=str, required=True)
+@click.option("--n-degrees", type=int, default=3)
+@click.option("--n-freqs", type=int, default=10)
+@click.option("--n-orders", type=int, default=3)
+@click.option("--threshold", type=float, default=1e-6)
+@click.option("--alpha", type=float, default=1e-6)
+@click.option("--rtol", type=float, default=1e-6)
+@click.option("--atol", type=float, default=1e-6)
+@click.option("--time-mem", type=str, default=None)
+def test_cli(
+    data,
+    n_degrees,
+    n_freqs,
+    n_orders,
+    threshold,
+    alpha,
+    rtol,
+    atol,
+    time_mem,
+):
+    test(
+        data,
+        n_degrees,
+        n_freqs,
+        n_orders,
+        threshold,
+        alpha,
+        rtol,
+        atol,
+        time_mem=time_mem,
     )
 
 

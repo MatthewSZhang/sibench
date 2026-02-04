@@ -7,6 +7,9 @@ import optuna
 import click
 import sqlite3
 import os
+import pandas as pd
+import time
+import tracemalloc
 
 
 @click.command()
@@ -192,7 +195,13 @@ def test_opt(data, results_path: str, print_results=True, return_metric: str = "
 
 
 def test(
-    data, n_terms, n_lags, n_polys, print_results=True, return_metric: str = "RMSE"
+    data,
+    n_terms,
+    n_lags,
+    n_polys,
+    print_results=True,
+    return_metric: str = "RMSE",
+    time_mem: str | None = None,
 ):
     X_train, y_train, session_sizes_train, n_init = _get_data(data)
     X_test, y_test, session_sizes_test, _ = _get_data(data, return_test=True)
@@ -207,6 +216,10 @@ def test(
         max_candidates=1000,
         random_state=42,
     )
+    if time_mem:
+        tracemalloc.start()
+        start_time = time.time()
+
     mdl.fit(
         X=X_train,
         y=y_train,
@@ -215,6 +228,24 @@ def test(
         verbose=2,
         max_nfev=200,
     )
+
+    if time_mem:
+        end_time = time.time()
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        results = pd.DataFrame(
+            [
+                {
+                    "Data": data,
+                    "fastcan_time": end_time - start_time,
+                    "fastcan_mem_mb": peak / 2**20,
+                }
+            ]
+        )
+        if os.path.exists(time_mem):
+            results.to_csv(time_mem, mode="a", header=False, index=False)
+        else:
+            results.to_csv(time_mem, mode="w", header=True, index=False)
 
     y_val_pred = _predict(
         mdl,
@@ -232,6 +263,16 @@ def test(
         print_results=print_results,
         return_metric=return_metric,
     )
+
+
+@click.command()
+@click.option("--data", type=str, required=True, help="Data Name")
+@click.option("--n-terms", type=int, default=20)
+@click.option("--n-lags", type=int, default=10)
+@click.option("--n-polys", type=int, default=3)
+@click.option("--time-mem", type=str, default=None)
+def test_cli(data, n_terms, n_lags, n_polys, time_mem):
+    test(data, n_terms, n_lags, n_polys, time_mem=time_mem)
 
 
 def _cross_validation(

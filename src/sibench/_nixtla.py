@@ -11,6 +11,8 @@ import click
 from rich.progress import Progress, TimeRemainingColumn
 import sqlite3
 import os
+import time
+import tracemalloc
 
 
 @click.command()
@@ -227,7 +229,74 @@ def test_opt(data, results_path: str, return_metric: str = "RMSE"):
     return score
 
 
-def test(data, season_length, max_p, max_q, max_P, max_Q, return_metric="RMSE"):
+def check_train(
+    data,
+    season_length,
+    max_p,
+    max_q,
+    max_P,
+    max_Q,
+    time_mem: str,
+):
+    df_train_list, _, freq_str = _get_data(data, return_test=False)
+    # Concatenate all series into one dataframe for StatsForecast
+    df_train = pd.concat(df_train_list)
+
+    sf = _make_nixtla(
+        season_length,
+        max_p,
+        max_q,
+        max_P,
+        max_Q,
+        freq_str,
+    )
+
+    tracemalloc.start()
+    start_time = time.time()
+
+    # Fit the model on the training data
+    sf.fit(df=df_train)
+
+    end_time = time.time()
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    results = pd.DataFrame(
+        [
+            {
+                "Data": data,
+                "nixtla_time": end_time - start_time,
+                "nixtla_mem_mb": peak / 2**20,
+            }
+        ]
+    )
+    if os.path.exists(time_mem):
+        results.to_csv(time_mem, mode="a", header=False, index=False)
+    else:
+        results.to_csv(time_mem, mode="w", header=True, index=False)
+
+
+def test(
+    data,
+    season_length,
+    max_p,
+    max_q,
+    max_P,
+    max_Q,
+    return_metric="RMSE",
+    time_mem: str | None = None,
+):
+    if time_mem:
+        check_train(
+            data,
+            season_length,
+            max_p,
+            max_q,
+            max_P,
+            max_Q,
+            time_mem,
+        )
+
     df_test, n_init, freq_str = _get_data(data, return_test=True)
 
     sf = _make_nixtla(
@@ -267,6 +336,34 @@ def test(data, season_length, max_p, max_q, max_P, max_Q, return_metric="RMSE"):
         n_init=0,
         print_results=True,
         return_metric=return_metric,
+    )
+
+
+@click.command()
+@click.option("--data", type=str, required=True)
+@click.option("--season-length", type=int, default=50)
+@click.option("--max-p", type=int, default=5)
+@click.option("--max-q", type=int, default=5)
+@click.option("--max-P", "max_P", type=int, default=1)
+@click.option("--max-Q", "max_Q", type=int, default=1)
+@click.option("--time-mem", type=str, default=None)
+def test_cli(
+    data,
+    season_length,
+    max_p,
+    max_q,
+    max_P,
+    max_Q,
+    time_mem,
+):
+    test(
+        data,
+        season_length,
+        max_p,
+        max_q,
+        max_P,
+        max_Q,
+        time_mem=time_mem,
     )
 
 
