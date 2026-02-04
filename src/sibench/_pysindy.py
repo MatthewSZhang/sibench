@@ -14,20 +14,38 @@ import os
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Name of the dataset")
-@click.option("--d-l", default=1, type=int, help="PolynomialLibrary: Lower bound for degree")
-@click.option("--d-u", default=3, type=int, help="PolynomialLibrary: Upper bound for degree")
-@click.option("--f-l", default=1, type=int, help="FourierLibrary: Lower bound for frequency")
-@click.option("--f-u", default=10, type=int, help="FourierLibrary: Upper bound for frequency")
-@click.option("--o-l", default=1, type=int, help="FiniteDifference: Lower bound for order")
-@click.option("--o-u", default=3, type=int, help="FiniteDifference: Upper bound for order")
-@click.option("--t-l", default=1e-6, type=float, help="STLSQ: Lower bound for threshold")
+@click.option(
+    "--d-l", default=1, type=int, help="PolynomialLibrary: Lower bound for degree"
+)
+@click.option(
+    "--d-u", default=3, type=int, help="PolynomialLibrary: Upper bound for degree"
+)
+@click.option(
+    "--f-l", default=1, type=int, help="FourierLibrary: Lower bound for frequency"
+)
+@click.option(
+    "--f-u", default=10, type=int, help="FourierLibrary: Upper bound for frequency"
+)
+@click.option(
+    "--o-l", default=1, type=int, help="FiniteDifference: Lower bound for order"
+)
+@click.option(
+    "--o-u", default=3, type=int, help="FiniteDifference: Upper bound for order"
+)
+@click.option(
+    "--t-l", default=1e-6, type=float, help="STLSQ: Lower bound for threshold"
+)
 @click.option("--t-u", default=1.0, type=float, help="STLSQ: Upper bound for threshold")
 @click.option("--a-l", default=1e-6, type=float, help="STLSQ: Lower bound for alpha")
 @click.option("--a-u", default=1.0, type=float, help="STLSQ: Upper bound for alpha")
 @click.option("--rtol", default=1e-3, type=float, help="Integrator relative tolerance")
 @click.option("--atol", default=1e-3, type=float, help="Integrator absolute tolerance")
-@click.option("--n-folds", default=5, type=int, help="Number of folds for cross validation")
-@click.option("--n-trials", default=None, type=int, help="Number of optimization trials")
+@click.option(
+    "--n-folds", default=5, type=int, help="Number of folds for cross validation"
+)
+@click.option(
+    "--n-trials", default=None, type=int, help="Number of optimization trials"
+)
 def hpopt(
     data: str,
     d_l: int,
@@ -58,29 +76,32 @@ def hpopt(
         direction="maximize",
         storage=f"sqlite:///{db_path}",
         study_name="pysindy_stlsq",
-        load_if_exists=True
+        load_if_exists=True,
     )
-    
+
     print("Starting optimization...")
-    study.optimize(lambda trial: _objective(
-        trial,
-        X_full,
-        y_full,
-        dt_full,
-        n_init,
-        d_l,
-        d_u,
-        f_l,
-        f_u,
-        o_l,
-        o_u,
-        t_l,
-        t_u,
-        a_l,
-        a_u,
-        integrator_kws,
-        n_folds,
-    ), n_trials=n_trials)
+    study.optimize(
+        lambda trial: _objective(
+            trial,
+            X_full,
+            y_full,
+            dt_full,
+            n_init,
+            d_l,
+            d_u,
+            f_l,
+            f_u,
+            o_l,
+            o_u,
+            t_l,
+            t_u,
+            a_l,
+            a_u,
+            integrator_kws,
+            n_folds,
+        ),
+        n_trials=n_trials,
+    )
 
     print("Best params:", study.best_params)
     print("Best value:", study.best_value)
@@ -104,13 +125,12 @@ def _objective(
     a_u,
     integrator_kws,
     n_folds,
-
 ):
-    degree = trial.suggest_int('degree', d_l, d_u)
-    freq = trial.suggest_int('freq', f_l, f_u)
-    order = trial.suggest_int('order', o_l, o_u)
-    threshold = trial.suggest_float('threshold', t_l, t_u, log=True)
-    alpha = trial.suggest_float('alpha', a_l, a_u, log=True)
+    degree = trial.suggest_int("degree", d_l, d_u)
+    freq = trial.suggest_int("freq", f_l, f_u)
+    order = trial.suggest_int("order", o_l, o_u)
+    threshold = trial.suggest_float("threshold", t_l, t_u, log=True)
+    alpha = trial.suggest_float("alpha", a_l, a_u, log=True)
 
     r2 = []
 
@@ -131,12 +151,14 @@ def _objective(
         )
         return np.mean(r2)
     except Exception:
-        return float('-inf')
+        return float("-inf")
 
 
 @click.command()
 @click.option("--data", type=str, required=True, help="Name of the dataset")
-@click.option("--n-folds", default=5, type=int, help="Number of folds for cross validation")
+@click.option(
+    "--n-folds", default=5, type=int, help="Number of folds for cross validation"
+)
 @click.option("--degree", type=int, required=True, help="Number of polynomial degrees")
 @click.option("--freq", type=int, required=True, help="Number of Fourier frequencies")
 @click.option("--order", type=int, required=True, help="Order of finite difference")
@@ -157,7 +179,7 @@ def evaluate(
 ):
     X_full, y_full, dt_full, n_init = _get_data(data)
 
-    integrator_kws = {'method': 'LSODA', 'rtol': rtol, 'atol': atol}
+    integrator_kws = {"method": "LSODA", "rtol": rtol, "atol": atol}
 
     scores = _cross_validation(
         X_full,
@@ -176,6 +198,7 @@ def evaluate(
     avg_score = np.mean(scores)
     print(f"CV R2: {avg_score:.4f}")
     return avg_score
+
 
 def _get_data(data: str, return_test: bool = False):
     match data:
@@ -207,6 +230,7 @@ def _get_data(data: str, return_test: bool = False):
         n_init = test.state_initialization_window_length
     return X_full, y_full, dt_full, n_init
 
+
 def _prepare_data(train_val):
     if not isinstance(train_val, tuple):
         train_val = (train_val,)
@@ -216,7 +240,13 @@ def _prepare_data(train_val):
     return X_full, y_full, dt_full
 
 
-def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True, return_metric: str = "R-squared"):
+def _compute_metrics(
+    y_true_full,
+    y_pred_full,
+    n_init,
+    print_results=True,
+    return_metric: str = "R-squared",
+):
     rmse = []
     nrmse = []
     r2 = []
@@ -236,7 +266,7 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True, ret
         print(f"RMSE: {np.mean(rmse)}")
         print(f"NRMSE: {np.mean(nrmse)}")
         print(f"R-squared: {np.mean(r2)}")
-        print(f'MAE: {np.mean(mae)}')
+        print(f"MAE: {np.mean(mae)}")
         print(f"fit index: {np.mean(fidx)}")
     match return_metric:
         case "RMSE":
@@ -252,7 +282,10 @@ def _compute_metrics(y_true_full, y_pred_full, n_init, print_results = True, ret
         case _:
             raise ValueError(f"Unknown metric: {return_metric}")
 
-def _make_sindyc(X_full, y_full, dt_full, n_degrees, n_freqs, n_orders, threshold, alpha):
+
+def _make_sindyc(
+    X_full, y_full, dt_full, n_degrees, n_freqs, n_orders, threshold, alpha
+):
     poly_library = ps.PolynomialLibrary(degree=n_degrees)
     fourier_library = ps.FourierLibrary(n_frequencies=n_freqs)
     combined_library = poly_library * fourier_library
@@ -260,7 +293,7 @@ def _make_sindyc(X_full, y_full, dt_full, n_degrees, n_freqs, n_orders, threshol
     finite_difference = FiniteDifference(order=n_orders)
 
     stlsq_optimizer = ps.STLSQ(
-        threshold = threshold,
+        threshold=threshold,
         alpha=alpha,
     )
     model = ps.SINDy(
@@ -271,19 +304,20 @@ def _make_sindyc(X_full, y_full, dt_full, n_degrees, n_freqs, n_orders, threshol
     model.fit(y_full, t=dt_full, u=X_full)
     return model
 
+
 def _predict(model: SINDy, X_full, y_full, dt_full, integrator_kws):
     def u_func(t, u, dt):
         return u[np.round(t / dt).astype(int)]
-    
+
     y_hat_full = []
     for i, dt in enumerate(dt_full):
         n_steps = X_full[i].shape[0]
-        t_steps = np.arange(0, dt*n_steps, dt)
+        t_steps = np.arange(0, dt * n_steps, dt)
         y_hat = model.simulate(
-            y_full[i][0], 
-            t=t_steps, 
+            y_full[i][0],
+            t=t_steps,
             u=lambda t: u_func(t, X_full[i], dt),
-            integrator_kws=integrator_kws
+            integrator_kws=integrator_kws,
         )
         y_hat_full.append(y_hat)
     return y_hat_full
@@ -298,18 +332,28 @@ def test_opt(data, results_path: str, return_metric="RMSE"):
 
     return test(
         data,
-        best_params['degree'],
-        best_params['freq'],
-        best_params['order'],
-        best_params['threshold'],
-        best_params['alpha'],
+        best_params["degree"],
+        best_params["freq"],
+        best_params["order"],
+        best_params["threshold"],
+        best_params["alpha"],
         rtol=1e-3,
         atol=1e-3,
         return_metric=return_metric,
     )
 
 
-def test(data, n_degrees, n_freqs, n_orders, threshold, alpha, rtol, atol, return_metric="RMSE"):
+def test(
+    data,
+    n_degrees,
+    n_freqs,
+    n_orders,
+    threshold,
+    alpha,
+    rtol,
+    atol,
+    return_metric="RMSE",
+):
     X_train, y_train, dt_train, _ = _get_data(data, return_test=False)
     X_test, y_test, dt_test, n_init = _get_data(data, return_test=True)
 
@@ -332,16 +376,29 @@ def test(data, n_degrees, n_freqs, n_orders, threshold, alpha, rtol, atol, retur
         dt_test,
         integrator_kws=integrator_kws,
     )
-    return _compute_metrics(y_test, y_test_pred, n_init, print_results=True, return_metric=return_metric)
+    return _compute_metrics(
+        y_test, y_test_pred, n_init, print_results=True, return_metric=return_metric
+    )
+
 
 def _cross_validation(
-    X_full, y_full, dt_full, n_init, n_degrees, n_freqs, n_orders, threshold, alpha, integrator_kws, n_folds=5, print_results=True
+    X_full,
+    y_full,
+    dt_full,
+    n_init,
+    n_degrees,
+    n_freqs,
+    n_orders,
+    threshold,
+    alpha,
+    integrator_kws,
+    n_folds=5,
+    print_results=True,
 ):
     n_sessions = len(X_full)
-    
 
     scores = []
-    
+
     # Generate splits for each session individually
     # session_splits[i] will contain list of (train_idx, val_idx) for the i-th session
     session_splits = []
@@ -356,25 +413,25 @@ def _cross_validation(
         X_train_fold = []
         y_train_fold = []
         dt_train_fold = []
-        
+
         X_val_fold = []
         y_val_fold = []
         dt_val_fold = []
-        
+
         # Collect data for this fold from all sessions
         for sess_idx in range(n_sessions):
             train_indices, val_indices = session_splits[sess_idx][fold_idx]
-            
+
             # Slice the session data
             X_sess = X_full[sess_idx]
             y_sess = y_full[sess_idx]
             dt_sess = dt_full[sess_idx]
-            
+
             # Append training chunks (each chunk is a separate trajectory in SINDy's view)
             X_train_fold.append(X_sess[train_indices])
             y_train_fold.append(y_sess[train_indices])
-            dt_train_fold.append(dt_sess) # dt is scalar per session
-            
+            dt_train_fold.append(dt_sess)  # dt is scalar per session
+
             # Append validation chunks
             X_val_fold.append(X_sess[val_indices])
             y_val_fold.append(y_sess[val_indices])
@@ -391,7 +448,7 @@ def _cross_validation(
             threshold,
             alpha,
         )
-        
+
         # Validate on collected validation trajectories
         y_val_pred = _predict(
             mdl_cv,
@@ -400,7 +457,11 @@ def _cross_validation(
             dt_val_fold,
             integrator_kws=integrator_kws,
         )
-        
-        scores.append(_compute_metrics(y_val_fold, y_val_pred, n_init, print_results=print_results))
-        
+
+        scores.append(
+            _compute_metrics(
+                y_val_fold, y_val_pred, n_init, print_results=print_results
+            )
+        )
+
     return scores
