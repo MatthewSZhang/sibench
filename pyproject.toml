@@ -32,6 +32,7 @@ test-fastcan = "sibench._fastcan:test_cli"
 test-pysindy = "sibench._pysindy:test_cli"
 test-nixtla = "sibench._nixtla:test_cli"
 results = "sibench._results:results"
+plot = "sibench._results:plot_results"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
