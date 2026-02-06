@@ -106,9 +106,9 @@ def plot_results(opt_csv, time_mem_folder):
     plt.yscale("log")
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig("fig_nrmse.png")
+    plt.savefig("fig_nrmse.pdf")
     plt.close()
-    print("Saved fig_nrmse.png")
+    print("Saved fig_nrmse.pdf")
 
     # 2. Process Time & Memory Data
     print(f"Reading time/memory results from {time_mem_folder}...")
@@ -163,9 +163,9 @@ def plot_results(opt_csv, time_mem_folder):
     plt.yscale("log")
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig("fig_time.png")
+    plt.savefig("fig_time.pdf")
     plt.close()
-    print("Saved fig_time.png")
+    print("Saved fig_time.pdf")
 
     # Plot Memory
     plt.figure(figsize=(10, 6))
@@ -173,6 +173,6 @@ def plot_results(opt_csv, time_mem_folder):
     plt.yscale("log")
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig("fig_memory.png")
+    plt.savefig("fig_memory.pdf")
     plt.close()
-    print("Saved fig_memory.png")
+    print("Saved fig_memory.pdf")
