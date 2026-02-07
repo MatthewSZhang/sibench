@@ -103,6 +103,8 @@ def plot_results(opt_csv, time_mem_folder):
     # Plot NRMSE
     plt.figure(figsize=(10, 6))
     sns.barplot(data=nrmse_long, x="Data", y="NRMSE", hue="Model", palette="viridis")
+    sns.despine()
+    plt.legend(frameon=False)
     plt.yscale("log")
     plt.xticks(rotation=45)
     plt.tight_layout()
@@ -160,6 +162,8 @@ def plot_results(opt_csv, time_mem_folder):
     # Plot Time
     plt.figure(figsize=(10, 6))
     sns.barplot(data=perf_df, x="Data", y="Time (s)", hue="Model", palette="viridis")
+    sns.despine()
+    plt.legend(frameon=False)
     plt.yscale("log")
     plt.xticks(rotation=45)
     plt.tight_layout()
@@ -170,6 +174,8 @@ def plot_results(opt_csv, time_mem_folder):
     # Plot Memory
     plt.figure(figsize=(10, 6))
     sns.barplot(data=perf_df, x="Data", y="Memory (MB)", hue="Model", palette="viridis")
+    sns.despine()
+    plt.legend(frameon=False)
     plt.yscale("log")
     plt.xticks(rotation=45)
     plt.tight_layout()
