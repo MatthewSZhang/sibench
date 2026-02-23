@@ -66,17 +66,18 @@ def results(db_path: str):
 )
 def plot_results(opt_csv, time_mem_folder):
     # Set style
+    font_size = 22
     sns.set_theme(style="whitegrid")
     plt.rcParams["font.family"] = "Times New Roman"
     plt.rcParams.update(
         {
-            "font.size": 18,
-            "axes.titlesize": 18,
-            "axes.labelsize": 18,
-            "xtick.labelsize": 18,
-            "ytick.labelsize": 18,
-            "legend.fontsize": 18,
-            "legend.title_fontsize": 18,
+            "font.size": font_size,
+            "axes.titlesize": font_size,
+            "axes.labelsize": font_size,
+            "xtick.labelsize": font_size,
+            "ytick.labelsize": font_size,
+            "legend.fontsize": font_size,
+            "legend.title_fontsize": font_size,
         }
     )
 
